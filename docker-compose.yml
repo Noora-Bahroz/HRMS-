@@ -1,0 +1,161 @@
+version: "3.9"
+
+# Root Docker Compose for the HRMS stack.
+# Infra services (postgres, redis, minio, rabbitmq, nginx, monitoring) are
+# always available. The API and Web app services can be enabled in env files
+# (docker/dev/*.env) or run locally during development.
+
+x-postgres: &postgres-env
+  POSTGRES_USER: ${POSTGRES_USER:-hrms}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hrms}
+  POSTGRES_DB: ${POSTGRES_DB:-hrms}
+
+services:
+  # ============ INFRASTRUCTURE ============
+  postgres:
+    image: postgres:16-alpine
+    container_name: hrms-postgres
+    restart: unless-stopped
+    environment:
+      <<: *postgres-env
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: hrms-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: hrms-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-hrms}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-hrmsminio}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: hrms-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-hrms}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-hrms}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  nginx:
+    image: nginx:alpine
+    container_name: hrms-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+    profiles: ["full"]
+
+  # ============ MONITORING (optional profile) ============
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: hrms-prometheus
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    volumes:
+      - ./docker/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: hrms-grafana
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-hrms}
+    volumes:
+      - grafanadata:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+  # ============ APPLICATIONS ============
+  api:
+    build:
+      context: ./apps/server
+      dockerfile: ../../docker/dev/server.Dockerfile
+    container_name: hrms-api
+    restart: unless-stopped
+    profiles: ["full"]
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-hrms}:${POSTGRES_PASSWORD:-hrms}@postgres:5432/${POSTGRES_DB:-hrms}
+      REDIS_URL: redis://redis:6379
+      MINIO_ENDPOINT: minio
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-hrms}:${RABBITMQ_PASSWORD:-hrms}@rabbitmq:5672
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: ../../docker/dev/web.Dockerfile
+    container_name: hrms-web
+    restart: unless-stopped
+    profiles: ["full"]
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+  rabbitmqdata:
+  grafanadata:
