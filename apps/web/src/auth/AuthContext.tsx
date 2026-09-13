@@ -7,7 +7,7 @@ import {
   useState,
   ReactNode,
 } from "react";
-import { api, clearTokens, getAccessToken, setTokens } from "../api/client";
+import { api, clearTokens, getAccessToken, getRefreshToken, setTokens } from "../api/client";
 import { fetchMe, loginRequest, signupRequest, Me } from "./auth";
 
 interface AuthContextValue {
@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
-    const refresh = localStorage.getItem("hrms_refresh_token");
+    const refresh = getRefreshToken();
     if (refresh) void api.post("/auth/logout", { refreshToken: refresh }).catch(() => {});
     clearTokens();
     setMe(null);

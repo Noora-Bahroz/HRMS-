@@ -15,16 +15,43 @@ export const api = axios.create({
 const TOKEN_KEY = "hrms_access_token";
 const REFRESH_KEY = "hrms_refresh_token";
 
+const memoryStore = new Map<string, string>();
+
+function storageGet(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return memoryStore.get(key) ?? null;
+  }
+}
+function storageSet(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    memoryStore.set(key, value);
+  }
+}
+function storageRemove(key: string) {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    memoryStore.delete(key);
+  }
+}
+
 export function getAccessToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return storageGet(TOKEN_KEY);
+}
+export function getRefreshToken(): string | null {
+  return storageGet(REFRESH_KEY);
 }
 export function setTokens(access: string, refresh: string) {
-  localStorage.setItem(TOKEN_KEY, access);
-  localStorage.setItem(REFRESH_KEY, refresh);
+  storageSet(TOKEN_KEY, access);
+  storageSet(REFRESH_KEY, refresh);
 }
 export function clearTokens() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
+  storageRemove(TOKEN_KEY);
+  storageRemove(REFRESH_KEY);
 }
 
 api.interceptors.request.use((config) => {
@@ -37,7 +64,7 @@ api.interceptors.response.use(
   (res) => res,
   async (error: AxiosError<ApiError>) => {
     const original = error.config as (typeof error.config & { _retried?: boolean }) | undefined;
-    const refresh = localStorage.getItem(REFRESH_KEY);
+    const refresh = getRefreshToken();
 
     if (error.response?.status === 401 && original && refresh && !original._retried) {
       original._retried = true;
