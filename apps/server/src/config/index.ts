@@ -4,7 +4,7 @@ dotenv.config();
 export const config = {
   env: process.env.NODE_ENV || "development",
   port: parseInt(process.env.PORT || "4000", 10),
-  databaseUrl: process.env.DATABASE_URL || "",
+  databaseUrl: process.env.DATABASE_URL || "postgresql://neondb_owner:npg_qVQ0TAJn8ajD@ep-green-fog-axdbgtme-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET || "dev-access-secret",
     refreshSecret: process.env.JWT_REFRESH_SECRET || "dev-refresh-secret",
